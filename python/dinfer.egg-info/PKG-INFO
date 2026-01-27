@@ -1,0 +1,17 @@
+Metadata-Version: 2.4
+Name: dinfer
+Version: 0.1
+Summary: Package for dLLM inference
+License: Apache-2.0
+Requires-Python: >=3.6
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: scipy
+Requires-Dist: tqdm
+Requires-Dist: sglang==0.5.3.post1
+Dynamic: description-content-type
+Dynamic: license
+Dynamic: license-file
+Dynamic: requires-dist
+Dynamic: requires-python
+Dynamic: summary

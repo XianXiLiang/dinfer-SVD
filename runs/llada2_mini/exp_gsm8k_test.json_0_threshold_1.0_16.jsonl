@@ -1,0 +1,30 @@
+{
+    "id": 0,
+    "question": "Janet\u2019s ducks lay 16 eggs per day. She eats three for breakfast every morning and bakes muffins for her friends every day with four. She sells the remainder at the farmers' market daily for $2 per fresh duck egg. How much in dollars does she make every day at the farmers' market?",
+    "prompt": "Janet\u2019s ducks lay 16 eggs per day. She eats three for breakfast every morning and bakes muffins for her friends every day with four. She sells the remainder at the farmers' market daily for $2 per fresh duck egg. How much in dollars does she make every day at the farmers' market?",
+    "answer": " She eats three for breakfast every morning and bakes muffins for her friends every day with four. She sells the remainder at the farmers' market daily for $2",
+    "generated_length": 32,
+    "tpf": 1.4545454545454546,
+    "tps": 30.456751905564772,
+    "fps": 20.93901693507578
+}
+{
+    "id": 1,
+    "question": "A robe takes 2 bolts of blue fiber and half that much white fiber.  How many bolts in total does it take?",
+    "prompt": "A robe takes 2 bolts of blue fiber and half that much white fiber.  How many bolts in total does it take?",
+    "answer": " much white fiber.  How many bolts in total does it take?",
+    "generated_length": 15,
+    "tpf": 0.8333333333333334,
+    "tps": 16.837728551383197,
+    "fps": 20.205274261659838
+}
+{
+    "id": 2,
+    "question": "Josh decides to try flipping a house.  He buys a house for $80,000 and then puts in $50,000 in repairs.  This increased the value of the house by 150%.  How much profit did he make?",
+    "prompt": "Josh decides to try flipping a house.  He buys a house for $80,000 and then puts in $50,000 in repairs.  This increased the value of the house by 150%.  How much profit did he make?",
+    "answer": " a house for $80,000 and then puts in $50,000 in repairs.  This increased the value of the house",
+    "generated_length": 32,
+    "tpf": 1.5238095238095237,
+    "tps": 31.183220903473728,
+    "fps": 20.463988717904634
+}
