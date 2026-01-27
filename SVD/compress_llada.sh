@@ -8,6 +8,16 @@
 
 # python shared_fix.py --model_dir /shared_LLM_model/LLaDA/LLaDA2.0-mini-SVD-Lora-0.6-revert --output_dir /shared_LLM_model/LLaDA/LLaDA2.0-mini-SVD-Lora-0.6-revert-fixed
 
-python replace_param.py --original_model_dir /shared_LLM_model/LLaDA/LLaDA2.0-mini \
+# python replace_param.py --original_model_dir /shared_LLM_model/LLaDA/LLaDA2.0-mini \
+#     --decomposed_model_dir /shared_LLM_model/LLaDA/LLaDA2.0-mini-SVD-Lora-0.6-revert-fixed \
+#     --output_dir /shared_LLM_model/LLaDA/LLaDA2.0-mini-SVD-Lora-0.6-revert-fixed-replace
+
+# python replace_param_2.py --original_model_dir /shared_LLM_model/LLaDA/LLaDA2.0-mini \
+#     --decomposed_model_dir /shared_LLM_model/LLaDA/LLaDA2.0-mini-SVD-Lora-0.6-revert-fixed \
+#     --output_dir /shared_LLM_model/LLaDA/LLaDA2.0-mini-SVD-Lora-0.6-revert-fixed-replace-top10% \
+#     --percentile 10 --csv_activation ../test_expert_stats.csv
+
+python replace_param_2.py --original_model_dir /shared_LLM_model/LLaDA/LLaDA2.0-mini \
     --decomposed_model_dir /shared_LLM_model/LLaDA/LLaDA2.0-mini-SVD-Lora-0.6-revert-fixed \
-    --output_dir /shared_LLM_model/LLaDA/LLaDA2.0-mini-SVD-Lora-0.6-revert-fixed-replace
+    --output_dir /shared_LLM_model/LLaDA/LLaDA2.0-mini-SVD-Lora-0.6-revert-fixed-replace-top10%not0 \
+    --percentile 10 --csv_activation ../test_expert_stats.csv
