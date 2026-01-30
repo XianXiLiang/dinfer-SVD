@@ -19,7 +19,7 @@ from dinfer import BlockIteratorFactory, KVCacheFactory, BlockDiffusionLLM
 from dinfer import ThresholdParallelDecoder,CreditThresholdParallelDecoder, HierarchyDecoder, BlockWiseDiffusionLLM, IterSmoothDiffusionLLM, VicinityCacheDiffusionLLM, IterSmoothWithVicinityCacheDiffusionLLM
 
 from datasets import load_dataset
-# from dinfer.expert_activation_tracker import ExpertActivationTracker, export_to_csv, plot_activation_heatmap
+from dinfer.expert_activation_tracker import ExpertActivationTracker, export_to_csv, plot_activation_heatmap
 # from dinfer.bd_expert_tracker import BlockDiffusionExpertTracker
 
 os.environ['TOKENIZERS_PARALLELISM'] = 'false'
@@ -29,98 +29,7 @@ os.environ['TOKENIZERS_PARALLELISM'] = 'false'
 bucket_size = 32
 used_buckets = []
 
-# def extract_answer(text):
-#     """从生成的文本中提取数字答案"""
-#     # patterns = [
-#     #     r'answer is\s*([-+]?\d+\.?\d*)',
-#     #     r'Final answer:\s*([-+]?\d+\.?\d*)',
-#     #     r'= ([-+]?\d+\.?\d*)',
-#     #     r'#### ([-+]?\d+\.?\d*)',
-#     #     r'([-+]?\d+\.?\d*)$'
-#     # ]
-    
-#     # for pattern in patterns:
-#     #     match = re.search(pattern, text, re.IGNORECASE)
-#     #     if match:
-#     #         try:
-#     #             return float(match.group(1))
-#     #         except:
-#     #             pass
-#     # return None
 
-#     m = re.search(r'####\s*([-+]?\d+\.?\d*)', text, re.I)
-#     if m:
-#         return float(m.group(1))
-
-#     m = re.search(r'(?:Answer|Final Answer)\s*[::]\s*\$?([\d,]+\.?\d*)\$?', text, re.I)
-#     if m:
-#         return float(m.group(1).replace(',', ''))
-
-#     m = re.findall(r'\$?([\d,]+\.?\d*)\$?', text.replace('\n', ' '))
-#     if m:
-#         return float(m[-1].replace(',', ''))
-
-#     return None
-
-# def load_gsm8k_dataset(num_samples=None):
-#     """加载GSM8K数据集"""
-#     dataset = load_dataset("gsm8k", "main")
-#     test_set = dataset["test"]
-    
-#     if num_samples:
-#         test_set = test_set.select(range(min(num_samples, len(test_set))))
-    
-#     return test_set
-
-# def prepare_gsm8k_prompts(examples, tokenizer, target_len=128):
-#     """准备GSM8K提示词和输入"""
-#     all_input_ids = []
-#     prompts = []
-#     questions = []
-#     gold_answers = []
-#     ids = []
-    
-#     for idx, example in enumerate(examples):
-#         question = example["question"]
-#         answer_text = example["answer"]
-        
-#         # 提取黄金答案
-#         try:
-#             gold_answer = float(re.findall(r'([-+]?\d+\.?\d*)', answer_text.split("####")[-1])[0])
-#         except:
-#             gold_answer = None
-        
-#         ids.append(idx)
-#         gold_answers.append(gold_answer)
-#         questions.append(question)
-        
-#         # 构建提示词（使用CoT风格）
-#         cot_prompt = f"""Please solve this math problem step by step.
-
-# Question: {question}
-
-# Let me work through this step by step:"""
-        
-#         prompts.append(cot_prompt)
-        
-#         # Tokenize
-#         input_ids = tokenizer(cot_prompt)['input_ids']
-#         input_ids = torch.tensor(input_ids).unsqueeze(0)
-        
-#         # 填充到目标长度（与原有逻辑一致）
-#         seq = input_ids[0]
-#         orig_len = seq.size(0)
-#         repeat_times = target_len // orig_len
-#         remainder = target_len % orig_len
-        
-#         input_ids = torch.cat(
-#             [seq] * repeat_times + [seq[:remainder]],
-#             dim=0
-#         ).unsqueeze(0)
-        
-#         all_input_ids.append(input_ids)
-    
-#     return all_input_ids, prompts, questions, gold_answers, ids
 
 def get_bucket_length(length):
     #bucket_length = bucket_size*((length+bucket_size-1)//bucket_size)
@@ -221,20 +130,7 @@ def main(world_size, rank, gpu_id, args):
 
     tokenizer = AutoTokenizer.from_pretrained(args.model_name, trust_remote_code=True)
 
-    # if args.use_gsm8k:
-    #     # 使用GSM8K数据集
-    #     gsm8k_dataset = load_gsm8k_dataset(num_samples=args.gsm8k_samples)
-    #     all_input_ids, prompts, questions, gold_answers, ids = prepare_gsm8k_prompts(
-    #         gsm8k_dataset, tokenizer, target_len=512
-    #     )
-    #     dataset_name = f"gsm8k_{args.gsm8k_samples}"
-    #     is_gsm8k = True
-    # else:
-        # 使用原有的JSON文件
     all_input_ids, prompts, questions, ids = load_inputs(args.dataset, tokenizer)
-    # gold_answers = [None] * len(all_input_ids)  # 占位符
-    # dataset_name = args.dataset.split('/')[-1][:-5]
-    # is_gsm8k = False
 
     # all_input_ids, prompts, questions, ids = load_inputs(args.dataset, tokenizer)
     padded_gen_lens = cal_bucket_len(args, all_input_ids)
@@ -279,11 +175,11 @@ def main(world_size, rank, gpu_id, args):
     
     model = model.to(device)
 
-    # tracker = ExpertActivationTracker(
-    #     num_experts=model_config.num_experts,
-    #     num_layers=model_config.num_hidden_layers
-    # )
-    # tracker.attach_to_model(model)
+    tracker = ExpertActivationTracker(
+        num_experts=model_config.num_experts,
+        num_layers=model_config.num_hidden_layers
+    )
+    tracker.attach_to_model(model)
 
     # for n, p in model.named_parameters():
         # if "mlp.experts" in n:
@@ -327,7 +223,7 @@ def main(world_size, rank, gpu_id, args):
                 dllm = BlockWiseDiffusionLLM(model, decoder, BlockIteratorFactory(start_block_align=True), cache_factory=cache_factory, early_stop=True, use_shift=args.use_shift)
     else:
         dllm = BlockDiffusionLLM(model, decoder, BlockIteratorFactory(start_block_align=True, use_block_diffusion=True), cache_factory=cache_factory, early_stop=True, maximum_unroll=1, expected_tpf=15, backend='sglang', mini_batch_size=args.mini_batch_size, prefilling_limit=args.prefilling_limit, use_naive_batching=args.use_naive_batching
-                                 ,enable_expert_stats=True, num_layers=model_config.num_hidden_layers, num_experts=model_config.num_experts)
+                                 ,enable_expert_stats=False, num_layers=model_config.num_hidden_layers, num_experts=model_config.num_experts)
                                  
     # warmup for decoding algorithms
     input_ids = torch.randint(0, 100000, (args.mini_batch_size, 64), dtype=torch.long, device=device)
@@ -434,20 +330,8 @@ def main(world_size, rank, gpu_id, args):
             answer = (tokenizer.decode(out[0, all_input_ids[i].shape[1]:], skip_special_tokens=True))
             answers.append(answer)
 
-            # if is_gsm8k:
-            #     pred_answer = extract_answer(answer)
-            #     pred_answers.append(pred_answer)
-
-            #     gold_ans = gold_answers[i]
-            #     is_correct = pred_answer is not None and gold_ans is not None and abs(pred_answer - gold_ans) < 1e-6
-            #     print(f"\n[Sample {i}] {'✓ CORRECT' if is_correct else '✗ WRONG'}")
-            #     print(f"Question: {questions[i][:]}...")
-            #     print(f"Generated Text: {answer[:]}...")
-            #     print(f"Predicted: {pred_answer} | Gold: {gold_ans}")
-            #     print("-" * 80)
-
-        # tracker.print_summary()
-        # export_to_csv(tracker, 'test_expert_stats.csv')
+        tracker.print_summary()
+        export_to_csv(tracker, 'test_expert_stats.csv')
 
         if hasattr(dllm, 'expert_stats') and dllm.expert_stats is not None:
             print("\n" + "="*80)
@@ -464,17 +348,6 @@ def main(world_size, rank, gpu_id, args):
         print(f'Forward: {total_forward}, Time: {stop-start}, FPS: {total_forward/total_time}({np.mean(fpss)}), TPS: {total_token/total_time}({np.mean(tpss)}), TPF: {total_token/total_forward}({np.mean(tpfs)})')
         filename = args.output_dir+'/'+'_'.join([str(item) for item in [args.exp_name, dataset_name, args.config, args.parallel_decoding, args.threshold, args.prefix_look]])+'.jsonl'
         
-        # if is_gsm8k:
-        #     correct = 0
-        #     for i in range(len(pred_answers)):
-        #         if pred_answers[i] is not None and gold_answers[i] is not None:
-        #             if abs(pred_answers[i] - gold_answers[i]) < 1e-6:
-        #                 correct += 1
-        #     gsm8k_accuracy = correct / len(pred_answers) if len(pred_answers) > 0 else 0
-        #     print(f"\n========== GSM8K Results ==========")
-        #     print(f"Accuracy: {correct}/{len(pred_answers)} = {gsm8k_accuracy*100:.2f}%")
-        #     print("===================================\n")
-        
         with open (filename, 'w') as f:
             for i in range(len(answers)):
                 question = questions[i]
@@ -486,8 +359,8 @@ def main(world_size, rank, gpu_id, args):
         with open('results.txt', 'a+') as f:
             print(args.exp_name, args.config, args.parallel_decoding, args.threshold, args.prefix_look, args.batch_size, args.block_length, args.gpu, total_forward, stop-start, total_token / len(all_input_ids), total_forward/total_time, total_token/total_time, total_token/total_forward, sum(padded_gen_lens)/total_forward, np.mean(fpss), np.mean(tpss), np.mean(tpfs), args.dataset, file=f)
 
-    # if tracker is not None:
-    #     tracker.detach_from_model()
+    if tracker is not None:
+        tracker.detach_from_model()
     # if bd_expert_tracker is not None:
     #     bd_expert_tracker.detach()
     
