@@ -1,12 +1,12 @@
 # coding: utf-8
 """
-基于CSV激活数据的高频Expert权重替换工具
-改进版：直接从CSV读取激活数据，动态确定前10%高频experts
+基于CSV激活数据的高频Expert权重替换工具（支持Shared Expert）
+改进版：直接从CSV读取激活数据，动态确定前10%高频experts，并同时处理shared_experts
 
 流程：
 1. 从CSV读取激活数据
 2. 为每层计算前10%高频experts
-3. 从原始模型提取高频experts权重
+3. 从原始模型提取高频experts权重和shared_experts权重
 4. 加载分解权重并替换对应的key-value
 5. 保存为safetensor
 """
@@ -31,6 +31,16 @@ class HighFreqExpert:
     def key_prefix(self) -> str:
         """生成权重key前缀"""
         return f"model.layers.{self.layer}.mlp.experts.{self.expert}."
+
+
+@dataclass
+class SharedExpert:
+    """Shared Expert信息"""
+    layer: int
+    
+    def key_prefix(self) -> str:
+        """生成权重key前缀"""
+        return f"model.layers.{self.layer}.mlp.shared_experts."
 
 
 class CSVBasedExpertWeightReplacer:
@@ -65,6 +75,9 @@ class CSVBasedExpertWeightReplacer:
         
         # 从CSV读取激活数据并计算高频experts
         self.high_freq_experts = self._extract_high_freq_experts_from_csv()
+        
+        # 识别所有shared_experts (根据原始模型中的权重)
+        self.shared_experts = self._identify_shared_experts()
     
     def _extract_high_freq_experts_from_csv(self) -> List[HighFreqExpert]:
         """
@@ -83,7 +96,6 @@ class CSVBasedExpertWeightReplacer:
         
         # 获取expert ID和layer列
         expert_ids = df['Expert_ID'].values
-        # layer_columns = [col for col in df.columns if col.startswith('Layer_')]
         layer_columns = [col for col in df.columns if col.startswith('Layer_') and col != 'Layer_0']
         
         print(f"[信息] 总experts数: {len(expert_ids)}")
@@ -120,12 +132,50 @@ class CSVBasedExpertWeightReplacer:
         # 按activation降序排序，打印前20个
         high_freq_experts.sort(key=lambda x: x.activation, reverse=True)
         
-        print("\n高频experts:")
+        print("\n高频experts (前20个):")
         for i, exp in enumerate(high_freq_experts[:], 1):
             print(f"  {i:2d}. Layer {exp.layer:2d} Expert {exp.expert:3d}: "
                   f"激活数 = {exp.activation}")
         
         return high_freq_experts
+    
+    def _identify_shared_experts(self) -> List[SharedExpert]:
+        """
+        从原始模型中识别shared_experts
+        通过扫描model.safetensors.index.json中包含'shared_experts'的keys
+        """
+        print(f"\n[识别] 扫描shared_experts...")
+        
+        index_path = self.original_dir / "model.safetensors.index.json"
+        if not index_path.exists():
+            print(f"[警告] 找不到索引文件: {index_path}")
+            return []
+        
+        with open(index_path, 'r') as f:
+            index = json.load(f)
+        
+        weight_map = index["weight_map"]
+        
+        # 找出所有包含shared_experts的layers
+        shared_layers = set()
+        for key in weight_map.keys():
+            if "mlp.shared_experts" in key:
+                # 提取layer id: model.layers.{layer}.mlp.shared_experts
+                parts = key.split('.')
+                if 'layers' in parts:
+                    layer_idx = parts.index('layers')
+                    if layer_idx + 1 < len(parts):
+                        layer_id = int(parts[layer_idx + 1])
+                        shared_layers.add(layer_id)
+        
+        # 为每个有shared_experts的layer创建SharedExpert对象
+        shared_experts = [SharedExpert(layer=layer_id) for layer_id in sorted(shared_layers)]
+        
+        print(f"[完成] 识别了 {len(shared_experts)} 层的shared_experts")
+        for exp in shared_experts:
+            print(f"  Layer {exp.layer}")
+        
+        return shared_experts
     
     def _load_all_weights_from_shards(self, model_dir: Path) -> Dict[str, torch.Tensor]:
         """从所有safetensor分片加载所有权重"""
@@ -161,7 +211,7 @@ class CSVBasedExpertWeightReplacer:
         prefixes = {exp.key_prefix(): exp for exp in self.high_freq_experts}
         
         found_count = 0
-        for key, tensor in tqdm(state_dict.items(), desc="扫描权重", total=len(state_dict)):
+        for key, tensor in tqdm(state_dict.items(), desc="扫描高频experts权重", total=len(state_dict)):
             for prefix, expert in prefixes.items():
                 if key.startswith(prefix):
                     high_freq_weights[key] = tensor.clone()
@@ -172,14 +222,34 @@ class CSVBasedExpertWeightReplacer:
         
         return high_freq_weights
     
+    def _extract_shared_expert_weights(self, state_dict: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+        """从state_dict中提取shared_experts的权重"""
+        print("\n[提取] 提取shared_experts权重...")
+        
+        shared_weights = {}
+        prefixes = {exp.key_prefix(): exp for exp in self.shared_experts}
+        
+        found_count = 0
+        for key, tensor in tqdm(state_dict.items(), desc="扫描shared_experts权重", total=len(state_dict)):
+            for prefix, expert in prefixes.items():
+                if key.startswith(prefix):
+                    shared_weights[key] = tensor.clone()
+                    found_count += 1
+                    break
+        
+        print(f"[完成] 提取了 {found_count} 个shared_expert权重")
+        
+        return shared_weights
+    
     def replace_weights(self):
         """
         执行权重替换流程
         """
         print("\n" + "="*70)
-        print("开始替换高频Expert权重")
+        print("开始替换高频Expert和Shared Expert权重")
         print(f"CSV文件: {self.csv_path}")
         print(f"选择前{self.percentile}%的experts: {len(self.high_freq_experts)}个")
+        print(f"Shared Experts layers: {len(self.shared_experts)}层")
         print("="*70)
         
         # 步骤1: 加载原始权重
@@ -190,43 +260,62 @@ class CSVBasedExpertWeightReplacer:
         print("\n[步骤2] 提取高频experts权重...")
         high_freq_weights = self._extract_high_freq_weights(original_state_dict)
         
-        # 步骤3: 删除原始权重释放内存
-        print("\n[步骤3] 删除原始权重释放内存...")
+        # 步骤3: 提取shared_experts权重
+        print("\n[步骤3] 提取shared_experts权重...")
+        shared_weights = self._extract_shared_expert_weights(original_state_dict)
+        
+        # 步骤4: 删除原始权重释放内存
+        print("\n[步骤4] 删除原始权重释放内存...")
         del original_state_dict
         torch.cuda.empty_cache()
         print("[完成] 内存已释放")
         
-        # 步骤4: 加载分解权重
-        print("\n[步骤4] 加载分解权重...")
+        # 步骤5: 加载分解权重
+        print("\n[步骤5] 加载分解权重...")
         decomposed_state_dict = self._load_all_weights_from_shards(self.decomposed_dir)
         
-        # 步骤5: 替换对应的权重
-        print("\n[步骤5] 替换权重...")
-        replaced_count = 0
-        for key in tqdm(high_freq_weights.keys(), desc="替换权重"):
+        # 步骤6: 替换高频experts的权重
+        print("\n[步骤6] 替换高频experts权重...")
+        replaced_high_freq_count = 0
+        for key in tqdm(high_freq_weights.keys(), desc="替换高频experts权重"):
             if key in decomposed_state_dict:
                 decomposed_state_dict[key] = high_freq_weights[key].to(self.dtype)
-                replaced_count += 1
+                replaced_high_freq_count += 1
             else:
-                print(f"[警告] 在分解权重中未找到key: {key}")
+                print(f"[警告] 在分解权重中未找到高频expert key: {key}")
         
-        print(f"[完成] 替换了 {replaced_count} 个权重")
+        print(f"[完成] 替换了 {replaced_high_freq_count} 个高频expert权重")
+        
+        # 步骤7: 替换shared_experts的权重
+        print("\n[步骤7] 替换shared_experts权重...")
+        replaced_shared_count = 0
+        for key in tqdm(shared_weights.keys(), desc="替换shared_experts权重"):
+            if key in decomposed_state_dict:
+                decomposed_state_dict[key] = shared_weights[key].to(self.dtype)
+                replaced_shared_count += 1
+            else:
+                print(f"[警告] 在分解权重中未找到shared_expert key: {key}")
+        
+        print(f"[完成] 替换了 {replaced_shared_count} 个shared_expert权重")
         
         # 清理内存
-        del high_freq_weights
+        # del high_freq_weights
+        del shared_weights
         torch.cuda.empty_cache()
         
-        # 步骤6: 统一保存为safetensor
-        print("\n[步骤6] 保存为HuggingFace格式...")
+        # 步骤8: 统一保存为safetensor
+        print("\n[步骤8] 保存为HuggingFace格式...")
         self._save_to_huggingface_format(decomposed_state_dict)
         
-        # 步骤7: 保存统计信息
-        self._save_replacement_stats(replaced_count)
+        # 步骤9: 保存统计信息
+        # self._save_replacement_stats(replaced_high_freq_count, replaced_shared_count)
         
         print("\n" + "="*70)
         print("[替换完成]")
         print(f"高频Experts数: {len(self.high_freq_experts)}")
-        print(f"替换的权重数: {replaced_count}")
+        # print(f"替换的高频expert权重数: {replaced_high_freq_count}")
+        print(f"Shared Experts层数: {len(self.shared_experts)}")
+        print(f"替换的shared_expert权重数: {replaced_shared_count}")
         print(f"输出目录: {self.output_dir}")
         print("="*70)
     
@@ -310,7 +399,7 @@ class CSVBasedExpertWeightReplacer:
         
         return int(size_str)
     
-    def _save_replacement_stats(self, replaced_count: int):
+    def _save_replacement_stats(self, replaced_high_freq_count: int, replaced_shared_count: int):
         """保存替换统计信息"""
         stats = {
             "csv_file": str(self.csv_path),
@@ -324,7 +413,16 @@ class CSVBasedExpertWeightReplacer:
                 for exp in self.high_freq_experts
             ],
             "total_high_freq_experts": len(self.high_freq_experts),
-            "replaced_weights": replaced_count
+            "replaced_high_freq_weights": replaced_high_freq_count,
+            "shared_experts": [
+                {
+                    "layer": exp.layer
+                }
+                for exp in self.shared_experts
+            ],
+            "total_shared_experts": len(self.shared_experts),
+            "replaced_shared_weights": replaced_shared_count,
+            "total_replaced_weights": replaced_high_freq_count + replaced_shared_count
         }
         
         stats_path = self.output_dir / "replacement_stats.json"
@@ -352,7 +450,7 @@ def main():
     import argparse
     import numpy as np
     
-    parser = argparse.ArgumentParser(description="基于CSV的高频Expert权重替换工具")
+    parser = argparse.ArgumentParser(description="基于CSV的高频Expert和Shared Expert权重替换工具")
     parser.add_argument("--csv_activation", required=True, 
                        help="CSV激活数据文件路径")
     parser.add_argument("--original_model_dir", required=True, 
