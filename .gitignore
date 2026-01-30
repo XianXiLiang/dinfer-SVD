@@ -26,3 +26,4 @@ svd_accuracy.sh
 ./README.md
 ./log/
 ./nsys/
+./build/
