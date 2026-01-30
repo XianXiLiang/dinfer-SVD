@@ -41,48 +41,24 @@ def get_bucket_length(length):
 def load_inputs(dataset, tokenizer):
     with open(dataset, 'r') as f:
         data = json.load(f)
+    data["details"] = data["details"][:10]
     prompts = []
     questions = []
     ids = []
     all_input_ids = []
-    if isinstance(data, dict):
-        if "judge_details" in data.keys():
-            details_data = data['judge_details']
-        else:
-            details_data = data['details']
-    elif isinstance(data, list):
-        details_data = data[:100]  
-
+    if "judge_details" in data.keys():
+        details_data = data['judge_details']
+    else:
+        details_data = data['details']
     for id, judge_detail in enumerate(details_data):
-        if isinstance(judge_detail, str):
-            prompt = judge_detail 
-            
-        elif isinstance(judge_detail, dict):
-            prompt = judge_detail["prompt"]
-
         ids.append(id)
-
+        prompt = judge_detail['prompt']
         questions.append(prompt)
         prompt = '<role>SYSTEM</role>detailed thinking off<|role_end|><role>HUMAN</role>'+prompt+'<|role_end|><role>ASSISTANT</role>'   
         prompts.append(prompt)
 
         input_ids = tokenizer(prompt)['input_ids']
         input_ids = torch.tensor(input_ids).unsqueeze(0)
-
-        target_len = 128
-
-        seq = input_ids[0]           # [L]
-        orig_len = seq.size(0)
-        repeat_times = target_len // orig_len
-        remainder = target_len % orig_len
-
-        input_ids = torch.cat(
-            [seq] * repeat_times + [seq[:remainder]],
-            dim=0
-        ).unsqueeze(0)  
-
-        # print(f"input_ids {input_ids} {input_ids.shape}")
-
         all_input_ids.append(input_ids)
     return all_input_ids, prompts, questions, ids
 
