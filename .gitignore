@@ -27,3 +27,6 @@ svd_accuracy.sh
 ./log/
 ./nsys/
 ./build/
+./python/dinfer/model/modeling_llada2_moe_no_svd.py 
+./python/dinfer/model/modeling_llada2_moe_xxl.py
+./python/dinfer/model/sglangFusedMoE.py
